@@ -2,6 +2,8 @@ package com.domain_name.app_name
 
 import android.os.Bundle
 import android.util.Log
+import android.content.pm.PackageManager
+import androidx.core.content.ContextCompat
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodCall
@@ -21,6 +23,7 @@ class MainActivity : FlutterActivity() {
 
     private val LOG_TAG = "PdTest"
     private val CHANNEL = "com.domain_name.app_name"
+    private val MIC_PERMISSION_REQUEST_CODE = 123 // You can use any code
 
     private var pdService: PdService? = null
     private lateinit var dispatcher: PdUiDispatcher
@@ -38,10 +41,41 @@ class MainActivity : FlutterActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
+        requestMicrophonePermission()
+    }
+
+    private fun requestMicrophonePermission() {
+        val microphonePermission = android.Manifest.permission.RECORD_AUDIO
+        val permissionStatus = ContextCompat.checkSelfPermission(this, microphonePermission)
+
+        if (permissionStatus != PackageManager.PERMISSION_GRANTED) {
+            requestPermissions(arrayOf(microphonePermission), MIC_PERMISSION_REQUEST_CODE)
+        } else {
+            initializeAudioEngine()
+        }
+    }
+
+
+    private fun initializeAudioEngine() {
         AudioParameters.init(this)
         PdPreferences.initPreferences(applicationContext)
 
         initPd()
+    }
+
+    private fun initPd() {
+        dispatcher = PdUiDispatcher()
+        PdBase.setReceiver(dispatcher)
+
+        val sampleRate = AudioParameters.suggestSampleRate()
+
+        try {
+            PdAudio.initAudio(sampleRate, 1, 2, 8, true)
+            loadPdPatch()
+            startAudio()
+        } catch (e: IOException) {
+            Log.v(LOG_TAG, "failed to init pd audio")
+        }
     }
 
     private fun startAudio() {
@@ -56,20 +90,6 @@ class MainActivity : FlutterActivity() {
         pdService?.stopAudio()
     }
 
-    private fun initPd() {
-        dispatcher = PdUiDispatcher()
-        PdBase.setReceiver(dispatcher)
-
-        val sampleRate = AudioParameters.suggestSampleRate()
-
-        try {
-            PdAudio.initAudio(sampleRate, 0, 2, 8, true)
-            loadPdPatch()
-        } catch (e: IOException) {
-            Log.v(LOG_TAG, "failed to init pd audio")
-        }
-    }
-
     private fun loadPdPatch() {
         try {
             val dir: File = filesDir
@@ -78,6 +98,16 @@ class MainActivity : FlutterActivity() {
             PdBase.openPatch(patchFile.absolutePath)
         } catch (e: IOException) {
             Log.v(LOG_TAG, "failed to load pd patch")
+        }
+    }
+
+    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
+        if (requestCode == MIC_PERMISSION_REQUEST_CODE && grantResults.isNotEmpty() && grantResults[0] == android.content.pm.PackageManager.PERMISSION_GRANTED) {
+            initializeAudioEngine()
+        } else {
+            // Handle permission denied
+            // You might want to show a message to the user or close the app
+            Log.e(LOG_TAG, "Microphone permission denied")
         }
     }
 
