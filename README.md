@@ -11,3 +11,5 @@ changes in the code.
 ## Steps until this version
 
 0. Empty folder
+1. Create an empty flutter project with `flutter create --org com.domain_name app_name`
+2. Resolve dependencies with `flutter pub get`
