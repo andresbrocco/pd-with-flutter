@@ -13,3 +13,4 @@ changes in the code.
 0. Empty folder
 1. Create an empty flutter project with `flutter create --org com.domain_name app_name`
 2. Resolve dependencies with `flutter pub get`
+3. Minimal code to send a "on/off" message to a pure data patch, that plays a 440Hz sine wave.
