@@ -13,3 +13,4 @@ changes in the code.
 0. Empty folder
 1. Create an empty flutter project with `flutter create --org com.domain_name app_name`
 2. Resolve dependencies with `flutter pub get`
+3. Create 'looper' example: plays 2 sounds in loop, controlling their volumes and receiving the instant loudness as a feedback message from pura data. Also asks for microphone permission on startup. (This version contains all the necessary features to make no matter what audio app with flutter and pure data.)

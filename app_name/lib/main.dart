@@ -1,125 +1,269 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+
+import './vu_painter.dart';
 
 void main() {
+  SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp, DeviceOrientation.portraitDown]); // !!!!! This line crashes if running in debug mode !!!!!
+
   runApp(const MyApp());
 }
 
-class MyApp extends StatelessWidget {
+class MyApp extends StatefulWidget {
+  final String title = 'simple looper';
   const MyApp({super.key});
 
-  // This widget is the root of your application.
   @override
-  Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'Flutter Demo',
-      theme: ThemeData(
-        // This is the theme of your application.
-        //
-        // TRY THIS: Try running your application with "flutter run". You'll see
-        // the application has a purple toolbar. Then, without quitting the app,
-        // try changing the seedColor in the colorScheme below to Colors.green
-        // and then invoke "hot reload" (save your changes or press the "hot
-        // reload" button in a Flutter-supported IDE, or press "r" if you used
-        // the command line to start the app).
-        //
-        // Notice that the counter didn't reset back to zero; the application
-        // state is not lost during the reload. To reset the state, use hot
-        // restart instead.
-        //
-        // This works for code too, not just values: Most code changes can be
-        // tested with just a hot reload.
-        colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),
-        useMaterial3: true,
-      ),
-      home: const MyHomePage(title: 'Flutter Demo Home Page'),
-    );
-  }
+  _MyAppState createState() => _MyAppState();
 }
 
-class MyHomePage extends StatefulWidget {
-  const MyHomePage({super.key, required this.title});
+class _MyAppState extends State<MyApp> {
+  static const methodChannelName = 'com.domain_name.app_name';
+  static const methodChannel = MethodChannel(methodChannelName);
 
-  // This widget is the home page of your application. It is stateful, meaning
-  // that it has a State object (defined below) that contains fields that affect
-  // how it looks.
+  static const vuMeterEventChannelName = 'com.domain_name.app_name/vumeter'; // This "vumeter" is the keyword specified at a "send" object inside the puredata patch
+  static const EventChannel eventChannelVUMeter = EventChannel(vuMeterEventChannelName);
 
-  // This class is the configuration for the state. It holds the values (in this
-  // case the title) provided by the parent (in this case the App widget) and
-  // used by the build method of the State. Fields in a Widget subclass are
-  // always marked "final".
+  bool _bangStatus = false;
+  bool _playStatus = false;
 
-  final String title;
+  double _drumVolume = 0;
+  double _bassVolume = 0;
 
-  @override
-  State<MyHomePage> createState() => _MyHomePageState();
-}
+  double _drumLevel = -100;
+  double _bassLevel = -100;
 
-class _MyHomePageState extends State<MyHomePage> {
-  int _counter = 0;
+  void _clearVuMeters({index = 3}) {
+    double dLevel = index & 1 > 0 ? -100 : _drumLevel;
+    double bLevel = index & 2 > 0 ? -100 : _bassLevel;
 
-  void _incrementCounter() {
     setState(() {
-      // This call to setState tells the Flutter framework that something has
-      // changed in this State, which causes it to rerun the build method below
-      // so that the display can reflect the updated values. If we changed
-      // _counter without calling setState(), then the build method would not be
-      // called again, and so nothing would appear to happen.
-      _counter++;
+      _drumLevel = dLevel;
+      _bassLevel = bLevel;
+    });
+  }
+
+  void _toggleAudio(newValue) {
+    double dspToggle = newValue ? 1.0 : 0.0;
+
+    if (_playStatus && !newValue) {
+      _onBangToggle();
+    }
+
+    setState(() {
+      _clearVuMeters();
+      _playStatus = newValue;
+    });
+
+    methodChannel.invokeMethod('dspToggle', {'toggle': dspToggle});
+  }
+
+  void _onBangToggle() {
+    bool bStatus = !_bangStatus;
+
+    if (bStatus) {
+      if (!_playStatus) {
+        if (_drumVolume == 0 && _bassVolume == 0) {
+          _onDrumVolumeChange(.25);
+          _onBassVolumeChange(.25);
+        }
+
+        _toggleAudio(true);
+      }
+
+      methodChannel.invokeMethod('bangStart');
+    } else {
+      methodChannel.invokeMethod('bangStop');
+    }
+
+    setState(() {
+      _bangStatus = bStatus;
+      _clearVuMeters();
+    });
+  }
+
+  void _onDrumVolumeChange(newValue) {
+    methodChannel.invokeMethod('looperSliderSet', {'source': 'drum', 'value': newValue});
+
+    if (newValue < .1) _clearVuMeters(index: 1);
+
+    setState(() {
+      _drumVolume = newValue;
+    });
+  }
+
+  void _onBassVolumeChange(newValue) {
+    methodChannel.invokeMethod('looperSliderSet', {'source': 'bass', 'value': newValue});
+
+    if (newValue < .1) _clearVuMeters(index: 2);
+
+    setState(() {
+      _bassVolume = newValue;
     });
   }
 
   @override
+  void initState() {
+    super.initState();
+    methodChannel.invokeMethod('dspToggle', {'toggle': 0.0});
+
+    eventChannelVUMeter.receiveBroadcastStream().listen((dynamic evt) {
+      _updateVuMeter(evt);
+    });
+  }
+
+  void _updateVuMeter(evt) {
+    if (!_bangStatus || !_playStatus) {
+      _clearVuMeters();
+      return;
+    }
+
+    if (evt['track'] == 'drum' && _drumVolume > 0) {
+      setState(() {
+        _drumLevel = evt['value'];
+      });
+    } else if (_bassVolume > 0) {
+      setState(() {
+        _bassLevel = evt['value'];
+      });
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
-    // This method is rerun every time setState is called, for instance as done
-    // by the _incrementCounter method above.
-    //
-    // The Flutter framework has been optimized to make rerunning build methods
-    // fast, so that you can just rebuild anything that needs updating rather
-    // than having to individually change instances of widgets.
-    return Scaffold(
-      appBar: AppBar(
-        // TRY THIS: Try changing the color here to a specific color (to
-        // Colors.amber, perhaps?) and trigger a hot reload to see the AppBar
-        // change color while the other colors stay the same.
-        backgroundColor: Theme.of(context).colorScheme.inversePrimary,
-        // Here we take the value from the MyHomePage object that was created by
-        // the App.build method, and use it to set our appbar title.
-        title: Text(widget.title),
+    return MaterialApp(
+      debugShowCheckedModeBanner: false,
+      theme: ThemeData(
+        primarySwatch: Colors.blue,
       ),
-      body: Center(
-        // Center is a layout widget. It takes a single child and positions it
-        // in the middle of the parent.
-        child: Column(
-          // Column is also a layout widget. It takes a list of children and
-          // arranges them vertically. By default, it sizes itself to fit its
-          // children horizontally, and tries to be as tall as its parent.
-          //
-          // Column has various properties to control how it sizes itself and
-          // how it positions its children. Here we use mainAxisAlignment to
-          // center the children vertically; the main axis here is the vertical
-          // axis because Columns are vertical (the cross axis would be
-          // horizontal).
-          //
-          // TRY THIS: Invoke "debug painting" (choose the "Toggle Debug Paint"
-          // action in the IDE, or press "p" in the console), to see the
-          // wireframe for each widget.
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: <Widget>[
-            const Text(
-              'You have pushed the button this many times:',
+      home: Scaffold(
+        body: Container(
+          decoration: const BoxDecoration(
+            image: DecorationImage(
+              image: AssetImage('assets/app_bck_01.png'),
             ),
-            Text(
-              '$_counter',
-              style: Theme.of(context).textTheme.headlineMedium,
-            ),
-          ],
+          ),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: <Widget>[
+              Container(
+                padding: const EdgeInsets.all(48),
+                child: Text(
+                  widget.title,
+                  style: const TextStyle(fontFamily: 'VDub-Regular', color: Colors.white, fontSize: 22),
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 24),
+                child: Row(
+                  children: <Widget>[
+                    const SizedBox(
+                      width: 64,
+                      child: Text(
+                        'drum',
+                        style: TextStyle(color: Colors.white, fontFamily: 'VDub-Regular'),
+                      ),
+                    ),
+                    Expanded(
+                      child: Slider(
+                          activeColor: Colors.white,
+                          inactiveColor: Colors.blue[900],
+                          min: 0,
+                          max: 1,
+                          divisions: 10,
+                          value: _drumVolume,
+                          onChanged: _onDrumVolumeChange),
+                    ),
+                  ],
+                ),
+              ),
+              Row(mainAxisAlignment: MainAxisAlignment.start, children: <Widget>[
+                Container(
+                  padding: const EdgeInsets.fromLTRB(24, 4, 24, 32),
+                  child: CustomPaint(
+                    foregroundPainter: VUPainter(
+                      lineColor: Colors.cyan,
+                      level: _drumLevel,
+                    ),
+                  ),
+                ),
+              ]),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 24),
+                child: Row(
+                  children: <Widget>[
+                    const SizedBox(
+                      width: 64,
+                      child: Text(
+                        'bass',
+                        style: TextStyle(color: Colors.white, fontFamily: 'VDub-Regular'),
+                      ),
+                    ),
+                    Expanded(
+                      child: Slider(
+                          activeColor: Colors.white,
+                          inactiveColor: Colors.blue[900],
+                          min: 0,
+                          max: 1,
+                          divisions: 10,
+                          value: _bassVolume,
+                          onChanged: _onBassVolumeChange),
+                    )
+                  ],
+                ),
+              ),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.start,
+                children: <Widget>[
+                  Container(
+                    padding: const EdgeInsets.fromLTRB(24, 4, 24, 48),
+                    child: CustomPaint(
+                      foregroundPainter: VUPainter(
+                        lineColor: Colors.blue,
+                        level: _bassLevel,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: <Widget>[
+                  Container(
+                    padding: const EdgeInsets.all(8.0),
+                    decoration: const BoxDecoration(
+                      borderRadius: BorderRadius.all(Radius.circular(60.0)),
+                      color: Colors.white,
+                    ),
+                    child: Column(
+                      children: <Widget>[
+                        Text(
+                          'dsp',
+                          style: TextStyle(
+                            color: Colors.blue[900],
+                            fontFamily: 'VDub-Regular',
+                          ),
+                        ),
+                        Switch(
+                          activeColor: Colors.blue[900],
+                          inactiveThumbColor: Colors.blue[200],
+                          value: _playStatus,
+                          onChanged: _toggleAudio,
+                        ),
+                        FloatingActionButton(
+                          backgroundColor: Colors.blue[900],
+                          onPressed: _onBangToggle,
+                          child: Icon(_bangStatus ? Icons.stop : Icons.play_arrow),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
         ),
       ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: _incrementCounter,
-        tooltip: 'Increment',
-        child: const Icon(Icons.add),
-      ), // This trailing comma makes auto-formatting nicer for build methods.
     );
   }
 }

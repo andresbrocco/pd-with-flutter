@@ -64,4 +64,6 @@ flutter {
     source '../..'
 }
 
-dependencies {}
+dependencies {
+    implementation 'io.github.libpd.android:pd-core:1.2.1-rc6' // This downloads the pd-core library from https://s01.oss.sonatype.org/content/repositories/snapshots/io/github/libpd/android/pd-core/1.2.1-SNAPSHOT/
+}
